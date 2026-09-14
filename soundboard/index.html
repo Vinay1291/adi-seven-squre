@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reaction Pad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Fredoka:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(circle at 80% 100%, #1B0F3D 0%, #0D0620 55%, #060312 100%);
+    color: #F5F0FF;
+    font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+    padding: 30px 16px 44px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .header { text-align: center; margin-bottom: 26px; }
+  h1 {
+    font-family: 'Fredoka', 'Segoe UI', sans-serif;
+    font-size: clamp(32px, 7vw, 48px);
+    font-weight: 700;
+    margin: 0;
+    background: linear-gradient(90deg, #00F0FF, #C6FF00 55%, #FF3EA5);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 0 40px rgba(0,240,255,0.2);
+  }
+  .header p { color: #B9A9E0; margin: 6px 0 0; font-size: 14px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .pad {
+    aspect-ratio: 1 / 0.85;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: linear-gradient(145deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px;
+    color: inherit;
+    transition: transform 0.07s ease, box-shadow 0.1s ease, filter 0.1s ease;
+    box-shadow: 0 0 0 rgba(0,0,0,0);
+  }
+  .pad:active { transform: scale(0.93); }
+  .pad.pressed { transform: scale(0.95); filter: brightness(1.3); }
+  .pad .emoji { font-size: clamp(22px, 6vw, 32px); }
+  .pad .label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .footer {
+    text-align: center;
+    color: #5C5470;
+    font-size: 12px;
+    margin-top: 28px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pad { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>REACTION PAD</h1>
+    <p>Tap a pad. Drop it at the perfect moment.</p>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <p class="footer">All sounds synthesized live with Tone.js — no audio files needed.</p>
+</div>
+
+<script>
+const PADS = [
+  { id: "airhorn",     label: "AIR HORN",     emoji: "📯", color: "#FFB800" },
+  { id: "bruh",        label: "BRUH",         emoji: "😐", color: "#7B2FFF" },
+  { id: "fail",        label: "FAIL",         emoji: "📉", color: "#FF3E3E" },
+  { id: "sadtrombone", label: "SAD TROMBONE", emoji: "🎺", color: "#00A3FF" },
+  { id: "vine",        label: "VINE BOOM",    emoji: "💥", color: "#FF3EA5" },
+  { id: "levelup",     label: "LEVEL UP",     emoji: "⭐", color: "#C6FF00" },
+  { id: "error",       label: "ERROR",        emoji: "❌", color: "#FF6B00" },
+  { id: "applause",    label: "CLAP",         emoji: "👏", color: "#00F0FF" },
+  { id: "gasp",        label: "GASP",         emoji: "😱", color: "#FF3EA5" },
+  { id: "drumroll",    label: "DRUM ROLL",    emoji: "🥁", color: "#7B2FFF" },
+  { id: "explosion",   label: "BOOM",         emoji: "💣", color: "#FF3E3E" },
+  { id: "coin",        label: "COIN",         emoji: "🪙", color: "#FFD400" },
+];
+
+// Build the pad buttons
+const grid = document.getElementById("grid");
+PADS.forEach((pad) => {
+  const btn = document.createElement("button");
+  btn.className = "pad";
+  btn.id = "pad-" + pad.id;
+  btn.style.borderColor = pad.color + "66";
+  btn.style.background = `linear-gradient(145deg, ${pad.color}33, rgba(255,255,255,0.03))`;
+  btn.innerHTML = `
+    <span class="emoji">${pad.emoji}</span>
+    <span class="label" style="color: ${pad.color}">${pad.label}</span>
+  `;
+  btn.addEventListener("click", () => hit(pad));
+  grid.appendChild(btn);
+});
+
+// Lazily build synths on first interaction (browsers block audio until a user gesture)
+let synths = null;
+let started = false;
+
+function buildSynths() {
+  return {
+    airhorn: new Tone.Synth({
+      oscillator: { type: "sawtooth" },
+      envelope: { attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.3 },
+    }).toDestination(),
+
+    bruh: new Tone.MembraneSynth({
+      pitchDecay: 0.1, octaves: 3,
+      envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.2 },
+    }).toDestination(),
+
+    fail: new Tone.Synth({
+      oscillator: { type: "square" },
+      envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.3 },
+    }).toDestination(),
+
+    sadtrombone: new Tone.Synth({
+      oscillator: { type: "sawtooth" },
+      envelope: { attack: 0.05, decay: 0.1, sustain: 0.6, release: 0.4 },
+    }).toDestination(),
+
+    vine: new Tone.MembraneSynth({
+      pitchDecay: 0.02, octaves: 8,
+      envelope: { attack: 0.001, decay: 0.5, sustain: 0, release: 0.3 },
+    }).toDestination(),
+
+    levelup: new Tone.Synth({
+      oscillator: { type: "square" },
+      envelope: { attack: 0.01, decay: 0.15, sustain: 0.2, release: 0.2 },
+    }).toDestination(),
+
+    error: new Tone.Synth({
+      oscillator: { type: "square" },
+      envelope: { attack: 0.005, decay: 0.15, sustain: 0, release: 0.1 },
+    }).toDestination(),
+
+    applause: new Tone.NoiseSynth({
+      noise: { type: "pink" },
+      envelope: { attack: 0.02, decay: 0.6, sustain: 0.1, release: 0.4 },
+    }).toDestination(),
+
+    gasp: new Tone.Synth({
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.15, decay: 0.1, sustain: 0.3, release: 0.2 },
+    }).toDestination(),
+
+    drumroll: new Tone.NoiseSynth({
+      noise: { type: "white" },
+      envelope: { attack: 0.005, decay: 0.05, sustain: 0.3, release: 0.1 },
+    }).toDestination(),
+
+    explosion: new Tone.NoiseSynth({
+      noise: { type: "brown" },
+      envelope: { attack: 0.001, decay: 0.8, sustain: 0, release: 0.5 },
+    }).toDestination(),
+
+    coin: new Tone.Synth({
+      oscillator: { type: "square" },
+      envelope: { attack: 0.001, decay: 0.1, sustain: 0.1, release: 0.1 },
+    }).toDestination(),
+  };
+}
+
+function playSound(id, now) {
+  switch (id) {
+    case "airhorn": {
+      const s = synths.airhorn;
+      s.triggerAttackRelease("C4", "8n", now);
+      s.triggerAttackRelease("C4", "8n", now + 0.15);
+      s.triggerAttackRelease("C4", "8n", now + 0.3);
+      break;
+    }
+    case "bruh": {
+      const s = synths.bruh;
+      s.triggerAttackRelease("C2", "8n", now);
+      s.triggerAttackRelease("A1", "8n", now + 0.18);
+      s.triggerAttackRelease("F1", "4n", now + 0.36);
+      break;
+    }
+    case "fail": {
+      const s = synths.fail;
+      s.triggerAttackRelease("A3", "16n", now);
+      s.triggerAttackRelease("Gb3", "16n", now + 0.12);
+      s.triggerAttackRelease("E3", "16n", now + 0.24);
+      s.triggerAttackRelease("Eb3", "4n", now + 0.36);
+      break;
+    }
+    case "sadtrombone": {
+      const s = synths.sadtrombone;
+      ["A3", "Ab3", "G3", "Gb3"].forEach((note, i) =>
+        s.triggerAttackRelease(note, "4n", now + i * 0.25)
+      );
+      break;
+    }
+    case "vine":
+      synths.vine.triggerAttackRelease("C1", "4n", now);
+      break;
+    case "levelup": {
+      const s = synths.levelup;
+      ["C4", "E4", "G4", "C5"].forEach((note, i) =>
+        s.triggerAttackRelease(note, "16n", now + i * 0.08)
+      );
+      break;
+    }
+    case "error": {
+      const s = synths.error;
+      s.triggerAttackRelease("C3", "16n", now);
+      s.triggerAttackRelease("C3", "16n", now + 0.15);
+      break;
+    }
+    case "applause":
+      synths.applause.triggerAttackRelease("2n", now);
+      break;
+    case "gasp":
+      synths.gasp.triggerAttackRelease("A5", "8n", now);
+      break;
+    case "drumroll": {
+      const s = synths.drumroll;
+      for (let i = 0; i < 12; i++) {
+        s.triggerAttackRelease("32n", now + i * 0.07);
+      }
+      break;
+    }
+    case "explosion":
+      synths.explosion.triggerAttackRelease("2n", now);
+      break;
+    case "coin": {
+      const s = synths.coin;
+      s.triggerAttackRelease("B5", "32n", now);
+      s.triggerAttackRelease("E6", "8n", now + 0.08);
+      break;
+    }
+  }
+}
+
+let pressTimeout = null;
+
+async function hit(pad) {
+  if (!started) {
+    await Tone.start();
+    synths = buildSynths();
+    started = true;
+  }
+  const now = Tone.now();
+  playSound(pad.id, now);
+
+  const btn = document.getElementById("pad-" + pad.id);
+  btn.classList.add("pressed");
+  btn.style.boxShadow = `0 0 26px ${pad.color}CC`;
+  clearTimeout(pressTimeout);
+  pressTimeout = setTimeout(() => {
+    btn.classList.remove("pressed");
+    btn.style.boxShadow = "0 0 0 rgba(0,0,0,0)";
+  }, 180);
+}
+</script>
+</body>
+</html>
